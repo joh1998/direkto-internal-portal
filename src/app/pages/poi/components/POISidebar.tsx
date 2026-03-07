@@ -1,22 +1,30 @@
-import { Search, Plus, MapPin, Settings2, CheckSquare, Square, Loader2, Filter, Layers } from 'lucide-react';
+import { Search, Plus, MapPin, Settings2, CheckSquare, Square, Loader2, ChevronDown, X } from 'lucide-react';
 import { useRef, useCallback, useState, useLayoutEffect } from 'react';
 import type { POI, POIKind } from '../../../lib/poi-api';
 
-/* ── Props ──────────────────────────────────────── */
+/* ── Kind color palette ─────────────────────────── */
 
-/** Kind color mapping */
-const KIND_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  attraction:   { bg: 'bg-sky-50 dark:bg-sky-950',       text: 'text-sky-700 dark:text-sky-400',       border: 'border-sky-200 dark:border-sky-800' },
-  essential:    { bg: 'bg-red-50 dark:bg-red-950',       text: 'text-red-700 dark:text-red-400',       border: 'border-red-200 dark:border-red-800' },
-  transport:    { bg: 'bg-indigo-50 dark:bg-indigo-950', text: 'text-indigo-700 dark:text-indigo-400', border: 'border-indigo-200 dark:border-indigo-800' },
-  merchant:     { bg: 'bg-amber-50 dark:bg-amber-950',   text: 'text-amber-700 dark:text-amber-400',   border: 'border-amber-200 dark:border-amber-800' },
-  public_place: { bg: 'bg-green-50 dark:bg-green-950',   text: 'text-green-700 dark:text-green-400',   border: 'border-green-200 dark:border-green-800' },
-  landmark:     { bg: 'bg-purple-50 dark:bg-purple-950', text: 'text-purple-700 dark:text-purple-400', border: 'border-purple-200 dark:border-purple-800' },
+const KIND_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
+  attraction:   { bg: 'bg-sky-50 dark:bg-sky-950',       text: 'text-sky-700 dark:text-sky-300',       dot: 'bg-sky-500' },
+  essential:    { bg: 'bg-red-50 dark:bg-red-950',       text: 'text-red-700 dark:text-red-300',       dot: 'bg-red-500' },
+  transport:    { bg: 'bg-indigo-50 dark:bg-indigo-950', text: 'text-indigo-700 dark:text-indigo-300', dot: 'bg-indigo-500' },
+  merchant:     { bg: 'bg-amber-50 dark:bg-amber-950',   text: 'text-amber-700 dark:text-amber-300',   dot: 'bg-amber-500' },
+  public_place: { bg: 'bg-green-50 dark:bg-green-950',   text: 'text-green-700 dark:text-green-300',   dot: 'bg-green-500' },
+  landmark:     { bg: 'bg-purple-50 dark:bg-purple-950', text: 'text-purple-700 dark:text-purple-300', dot: 'bg-purple-500' },
 };
 
 function getKindColor(kind: string) {
-  return KIND_COLORS[kind] || { bg: 'bg-gray-50 dark:bg-gray-950', text: 'text-gray-700 dark:text-gray-400', border: 'border-gray-200 dark:border-gray-800' };
+  return KIND_COLORS[kind] || { bg: 'bg-gray-50 dark:bg-gray-900', text: 'text-gray-600 dark:text-gray-400', dot: 'bg-gray-400' };
 }
+
+const STATUS_ICON: Record<string, string> = {
+  open: '●',
+  closed: '○',
+  temporarily_closed: '◐',
+  seasonal: '◑',
+};
+
+/* ── Props ──────────────────────────────────────── */
 
 interface POISidebarProps {
   pois: POI[];
@@ -40,19 +48,17 @@ interface POISidebarProps {
   canCreate: boolean;
   onCreateClick: () => void;
   onAdminToggle: () => void;
-  /** Bulk selection state */
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   bulkMode: boolean;
   onToggleBulkMode: () => void;
-  /** Slot for injecting admin ops or create form below header */
   children?: React.ReactNode;
 }
 
 /* ── Constants ──────────────────────────────────── */
 
-const ROW_HEIGHT = 76; // approximate height of a POI row in px
-const OVERSCAN = 5;    // extra rows above/below viewport
+const ROW_HEIGHT = 64;
+const OVERSCAN = 5;
 
 /* ── Component ──────────────────────────────────── */
 
@@ -67,10 +73,10 @@ export function POISidebar({
   selectedIds, onToggleSelect, bulkMode, onToggleBulkMode,
   children,
 }: POISidebarProps) {
-  const chips = [{ id: 'all', label: 'All' }, ...categories];
-  const kindChips = [{ id: 'all', label: 'All Kinds' }, ...kinds.map(k => ({ id: k.id, label: k.label }))];
+  const [showFilters, setShowFilters] = useState(false);
+  const activeFilterCount = (kindFilter ? 1 : 0) + (categoryFilter !== 'all' ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0);
 
-  /* ── Virtual scroll state ─────────────────────── */
+  /* ── Virtual scroll ───────────────────────────── */
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(600);
@@ -88,26 +94,33 @@ export function POISidebar({
     const el = scrollRef.current;
     if (!el) return;
     setScrollTop(el.scrollTop);
-
-    // Infinite scroll trigger — load more when near bottom
     if (hasMore && !loadingMore && el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
       onLoadMore();
     }
   }, [hasMore, loadingMore, onLoadMore]);
 
-  /* ── Compute visible window ───────────────────── */
   const totalHeight = pois.length * ROW_HEIGHT;
   const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const endIdx = Math.min(pois.length, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN);
   const visiblePois = pois.slice(startIdx, endIdx);
   const offsetY = startIdx * ROW_HEIGHT;
 
+  const kindLabel = kinds.find(k => k.id === kindFilter)?.label;
+  const catLabel = categories.find(c => c.id === categoryFilter)?.label;
+
+  const selectCls = 'w-full px-2.5 py-1.5 text-[12px] bg-[var(--input-background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] outline-none focus:ring-1 focus:ring-[var(--ring)]/30';
+
   return (
     <div className="w-[360px] border-r border-[var(--border)] bg-[var(--card)] flex flex-col shrink-0">
-      {/* Header */}
-      <div className="px-4 py-4 border-b border-[var(--border)]">
+      {/* ── Header ── */}
+      <div className="px-4 pt-4 pb-3 border-b border-[var(--border)]">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-[16px] text-[var(--foreground)]" style={{ fontWeight: 600 }}>POI Manager</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-[15px] text-[var(--foreground)]" style={{ fontWeight: 600 }}>POI Manager</h2>
+            <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[var(--accent)] text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>
+              {totalCount}
+            </span>
+          </div>
           <div className="flex gap-1">
             {canEdit && (
               <button
@@ -117,211 +130,215 @@ export function POISidebar({
                     ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
                     : 'hover:bg-[var(--accent)] text-[var(--muted-foreground)]'
                 }`}
-                aria-label="Toggle bulk selection"
                 title="Bulk select"
               >
                 <CheckSquare size={14} />
               </button>
             )}
-            {canCreate && (
-              <button
-                onClick={onCreateClick}
-                className="p-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 transition-colors"
-                aria-label="Create POI"
-              >
-                <Plus size={14} />
-              </button>
-            )}
             <button
               onClick={onAdminToggle}
               className="p-1.5 rounded-lg hover:bg-[var(--accent)] text-[var(--muted-foreground)] transition-colors"
-              aria-label="Admin operations"
+              title="Admin operations"
             >
               <Settings2 size={14} />
             </button>
+            {canCreate && (
+              <button
+                onClick={onCreateClick}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 transition-colors text-[12px]"
+                style={{ fontWeight: 500 }}
+              >
+                <Plus size={12} /> Add POI
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" aria-hidden="true" />
-          <input
-            value={search}
-            onChange={e => onSearchChange(e.target.value)}
-            placeholder="Search POIs..."
-            className="w-full pl-9 pr-3 py-2 text-[13px] bg-[var(--input-background)] border border-[var(--border)] rounded-lg outline-none focus:ring-2 focus:ring-[var(--ring)]/20 text-[var(--foreground)]"
-            aria-label="Search POIs"
-          />
+        {/* Search + Filter toggle */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
+            <input
+              value={search}
+              onChange={e => onSearchChange(e.target.value)}
+              placeholder="Search by name or address…"
+              className="w-full pl-9 pr-3 py-2 text-[13px] bg-[var(--input-background)] border border-[var(--border)] rounded-lg outline-none focus:ring-2 focus:ring-[var(--ring)]/20 text-[var(--foreground)]"
+            />
+          </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`relative px-2.5 py-2 rounded-lg border transition-colors ${
+              showFilters || activeFilterCount > 0
+                ? 'border-[var(--primary)] bg-[var(--primary)]/5 text-[var(--primary)]'
+                : 'border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--accent)]'
+            }`}
+            title="Filters"
+          >
+            <ChevronDown size={14} className={`transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] text-[9px] flex items-center justify-center" style={{ fontWeight: 600 }}>
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
         </div>
 
-        {/* Kind filter chips */}
-        <div className="flex items-center gap-1 mt-2 flex-wrap">
-          <Layers size={11} className="text-[var(--muted-foreground)] shrink-0" />
-          {kindChips.map(k => {
-            const isActive = kindFilter === (k.id === 'all' ? '' : k.id);
-            const colors = k.id !== 'all' ? getKindColor(k.id) : null;
-            return (
+        {/* Active filter pills */}
+        {!showFilters && activeFilterCount > 0 && (
+          <div className="flex gap-1.5 mt-2 flex-wrap">
+            {kindLabel && (
+              <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${getKindColor(kindFilter).bg} ${getKindColor(kindFilter).text}`} style={{ fontWeight: 500 }}>
+                {kindLabel}
+                <button onClick={() => onKindChange('')} className="hover:opacity-70"><X size={9} /></button>
+              </span>
+            )}
+            {categoryFilter !== 'all' && catLabel && (
+              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[var(--accent)] text-[var(--foreground)] border border-[var(--border)]" style={{ fontWeight: 500 }}>
+                {catLabel}
+                <button onClick={() => onCategoryChange('all')} className="hover:opacity-70"><X size={9} /></button>
+              </span>
+            )}
+            {statusFilter !== 'all' && (
+              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[var(--accent)] text-[var(--foreground)] border border-[var(--border)]" style={{ fontWeight: 500 }}>
+                {statusFilter}
+                <button onClick={() => onStatusChange('all')} className="hover:opacity-70"><X size={9} /></button>
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Collapsible filter panel */}
+        {showFilters && (
+          <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-2.5">
+            <div>
+              <label className="text-[10px] text-[var(--muted-foreground)] mb-1 block" style={{ fontWeight: 600 }}>Kind</label>
+              <select value={kindFilter} onChange={e => onKindChange(e.target.value)} className={selectCls}>
+                <option value="">All Kinds</option>
+                {kinds.map(k => <option key={k.id} value={k.id}>{k.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] text-[var(--muted-foreground)] mb-1 block" style={{ fontWeight: 600 }}>Type</label>
+              <select value={categoryFilter} onChange={e => onCategoryChange(e.target.value)} className={selectCls}>
+                <option value="all">All Types</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] text-[var(--muted-foreground)] mb-1 block" style={{ fontWeight: 600 }}>Status</label>
+              <select value={statusFilter} onChange={e => onStatusChange(e.target.value)} className={selectCls}>
+                {[
+                  { id: 'all', label: 'All Statuses' },
+                  { id: 'active', label: 'Active' },
+                  { id: 'inactive', label: 'Inactive' },
+                  { id: 'verified', label: 'Verified' },
+                  { id: 'unverified', label: 'Unverified' },
+                ].map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+            </div>
+            {activeFilterCount > 0 && (
               <button
-                key={k.id}
-                onClick={() => onKindChange(k.id === 'all' ? '' : k.id)}
-                className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${
-                  isActive
-                    ? colors
-                      ? `${colors.bg} ${colors.text} ${colors.border}`
-                      : 'bg-[var(--foreground)] text-[var(--background)] border-transparent'
-                    : 'bg-[var(--accent)] text-[var(--muted-foreground)] border-transparent hover:bg-[var(--accent)]/80'
-                }`}
+                onClick={() => { onKindChange(''); onCategoryChange('all'); onStatusChange('all'); }}
+                className="text-[11px] text-[var(--primary)] hover:underline"
                 style={{ fontWeight: 500 }}
               >
-                {k.label}
+                Clear all filters
               </button>
-            );
-          })}
-        </div>
-
-        {/* Category chips */}
-        <div className="flex gap-1 mt-2 flex-wrap">
-          {chips.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => onCategoryChange(cat.id)}
-              className={`px-2.5 py-1 text-[11px] rounded-full transition-colors ${
-                categoryFilter === cat.id
-                  ? 'bg-[var(--primary)] text-[var(--primary-foreground)]'
-                  : 'bg-[var(--accent)] text-[var(--muted-foreground)] hover:bg-[var(--accent)]/80'
-              }`}
-              style={{ fontWeight: 500 }}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Status filter */}
-        <div className="flex items-center gap-1.5 mt-2">
-          <Filter size={11} className="text-[var(--muted-foreground)] shrink-0" />
-          {[
-            { id: 'all', label: 'All' },
-            { id: 'active', label: 'Active' },
-            { id: 'inactive', label: 'Inactive' },
-            { id: 'verified', label: 'Verified' },
-            { id: 'unverified', label: 'Unverified' },
-          ].map(s => (
-            <button
-              key={s.id}
-              onClick={() => onStatusChange(s.id)}
-              className={`px-2 py-0.5 text-[10px] rounded-full transition-colors ${
-                statusFilter === s.id
-                  ? 'bg-[var(--foreground)] text-[var(--background)]'
-                  : 'bg-[var(--accent)] text-[var(--muted-foreground)] hover:bg-[var(--accent)]/80'
-              }`}
-              style={{ fontWeight: 500 }}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Injected children (admin ops, create form) */}
       {children}
 
-      {/* POI List — virtualized */}
+      {/* ── POI List (virtualized) ── */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto" onScroll={handleScroll}>
-        <p className="px-4 py-2 text-[11px] text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>
-          {pois.length} of {totalCount} POIs
+        <p className="px-4 py-2 text-[10px] text-[var(--muted-foreground)] uppercase tracking-wider" style={{ fontWeight: 600 }}>
+          Showing {pois.length} of {totalCount}
         </p>
+
         {pois.length === 0 && !loadingMore && (
-          <div className="px-4 py-8 text-center">
-            <MapPin size={20} className="mx-auto text-[var(--muted-foreground)] mb-2" aria-hidden="true" />
+          <div className="px-4 py-10 text-center">
+            <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-[var(--accent)] flex items-center justify-center">
+              <MapPin size={18} className="text-[var(--muted-foreground)]" />
+            </div>
             <p className="text-[13px] text-[var(--foreground)]" style={{ fontWeight: 500 }}>No POIs found</p>
-            <p className="text-[12px] text-[var(--muted-foreground)] mt-1">Try a different search or category filter.</p>
+            <p className="text-[12px] text-[var(--muted-foreground)] mt-1">Try adjusting your search or filters.</p>
           </div>
         )}
-        {/* Virtual scroll container */}
+
         <div style={{ height: totalHeight, position: 'relative' }}>
           <div style={{ position: 'absolute', top: offsetY, left: 0, right: 0 }}>
-            {visiblePois.map(poi => (
-              <button
-                key={poi.id}
-                onClick={() => bulkMode ? onToggleSelect(poi.id) : onSelect(poi)}
-                className={`w-full text-left px-4 py-3 border-b border-[var(--border)] transition-colors ${
-                  selectedIds.has(poi.id)
-                    ? 'bg-blue-50/70 dark:bg-blue-950/40'
-                    : selected?.id === poi.id
-                      ? 'bg-blue-50/50 dark:bg-blue-950/30 border-l-2 border-l-[var(--primary)]'
-                      : 'hover:bg-[var(--accent)]/50'
-                }`}
-                style={{ height: ROW_HEIGHT, boxSizing: 'border-box' }}
-              >
-                <div className="flex items-start gap-3">
-                  {/* Bulk checkbox */}
-                  {bulkMode && (
-                    <div className="mt-0.5 shrink-0">
-                      {selectedIds.has(poi.id) ? (
-                        <CheckSquare size={16} className="text-blue-600 dark:text-blue-400" />
-                      ) : (
-                        <Square size={16} className="text-[var(--muted-foreground)]" />
-                      )}
-                    </div>
-                  )}
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                    poi.isVerified
-                      ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400'
-                      : 'bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400'
-                  }`}>
-                    <MapPin size={14} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] truncate text-[var(--foreground)]" style={{ fontWeight: 500 }}>
-                      {poi.name}
-                    </p>
-                    <p className="text-[11px] text-[var(--muted-foreground)] truncate">
-                      {poi.fullAddress || poi.barangay || 'No address'}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      {poi.kind && (() => { const c = getKindColor(poi.kind); return (
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded border ${c.bg} ${c.text} ${c.border}`} style={{ fontWeight: 600 }}>
-                          {poi.kind.replace('_', ' ')}
+            {visiblePois.map(poi => {
+              const kc = getKindColor(poi.kind || '');
+              const isSelected = selected?.id === poi.id;
+              const isBulkSelected = selectedIds.has(poi.id);
+
+              return (
+                <button
+                  key={poi.id}
+                  onClick={() => bulkMode ? onToggleSelect(poi.id) : onSelect(poi)}
+                  className={`w-full text-left px-4 py-2 border-b border-[var(--border)] transition-all ${
+                    isBulkSelected
+                      ? 'bg-blue-50/70 dark:bg-blue-950/40'
+                      : isSelected
+                        ? 'bg-[var(--accent)] border-l-2 border-l-[var(--primary)]'
+                        : 'hover:bg-[var(--accent)]/40'
+                  }`}
+                  style={{ height: ROW_HEIGHT, boxSizing: 'border-box' }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    {bulkMode && (
+                      <div className="shrink-0">
+                        {isBulkSelected
+                          ? <CheckSquare size={15} className="text-blue-600 dark:text-blue-400" />
+                          : <Square size={15} className="text-[var(--muted-foreground)]" />
+                        }
+                      </div>
+                    )}
+                    {/* Kind dot */}
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${kc.dot}`} title={poi.kind?.replace('_', ' ')} />
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[13px] truncate text-[var(--foreground)] flex-1" style={{ fontWeight: 500 }}>
+                          {poi.displayName || poi.name}
+                        </p>
+                        {poi.status && poi.status !== 'unknown' && (
+                          <span className={`text-[10px] shrink-0 ${
+                            poi.status === 'open' ? 'text-emerald-500' : poi.status === 'closed' ? 'text-red-500' : 'text-amber-500'
+                          }`} title={poi.status.replace('_', ' ')}>
+                            {STATUS_ICON[poi.status] || '●'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={`text-[10px] px-1.5 rounded ${kc.bg} ${kc.text}`} style={{ fontWeight: 500 }}>
+                          {poi.type?.replace(/_/g, ' ')}
                         </span>
-                      ); })()}
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent)] text-[var(--muted-foreground)]">
-                        {poi.type}
-                      </span>
-                      {poi.status && poi.status !== 'unknown' && (
-                        <span className={`text-[9px] px-1 py-0.5 rounded ${
-                          poi.status === 'open' ? 'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950'
-                          : poi.status === 'closed' ? 'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-950'
-                          : 'text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950'
-                        }`}>
-                          {poi.status.replace('_', ' ')}
+                        <span className="text-[10px] text-[var(--muted-foreground)] truncate flex-1">
+                          {poi.barangay || poi.city || ''}
                         </span>
-                      )}
-                      {poi.isVerified && (
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400">Verified</span>
-                      )}
-                      {!poi.isActive && (
-                        <span className="text-[10px] text-red-500 dark:text-red-400">Inactive</span>
-                      )}
+                        {poi.isVerified && <span className="text-[9px] text-emerald-600 dark:text-emerald-400 shrink-0">✓</span>}
+                        {!poi.isActive && <span className="text-[9px] text-red-500 shrink-0">off</span>}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
-        {/* Loading more indicator */}
+
         {loadingMore && (
           <div className="flex items-center justify-center py-4">
-            <Loader2 size={16} className="animate-spin text-[var(--muted-foreground)] mr-2" />
-            <span className="text-[12px] text-[var(--muted-foreground)]">Loading more…</span>
+            <Loader2 size={14} className="animate-spin text-[var(--muted-foreground)] mr-2" />
+            <span className="text-[11px] text-[var(--muted-foreground)]">Loading more…</span>
           </div>
         )}
-        {/* End of list indicator */}
         {!hasMore && pois.length > 0 && pois.length >= totalCount && (
-          <p className="text-center text-[11px] text-[var(--muted-foreground)] py-3">
-            All {totalCount} POIs loaded
-          </p>
+          <p className="text-center text-[10px] text-[var(--muted-foreground)] py-3">All {totalCount} POIs loaded</p>
         )}
       </div>
     </div>
