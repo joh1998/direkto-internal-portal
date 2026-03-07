@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
-import { poiApi, type POI, type POIAnchor, type MapMarker } from '../../../lib/poi-api';
+import { poiApi, type POI, type POIAnchor, type MapMarker, type POIKind, type POIStatus } from '../../../lib/poi-api';
 
 /* ── Types ──────────────────────────────────────── */
 
@@ -15,6 +15,7 @@ export interface CreatePoiForm {
   id: string;
   name: string;
   displayName: string;
+  kind: string;
   type: string;
   address: string;
   barangay: string;
@@ -28,18 +29,24 @@ export interface CreatePoiForm {
   isIslandHotspot: boolean;
   isTouristArea: boolean;
   // Detail fields
-  description: string;
+  oneLiner: string;
+  descriptionShort: string;
+  descriptionLong: string;
+  visitHint: string;
+  accessHint: string;
+  status: POIStatus;
   contactPhone: string;
   website: string;
   priceLevel: string;
-  amenities: string;
+  coverImageUrl: string;
 }
 
 export const EMPTY_CREATE_FORM: CreatePoiForm = {
   id: '',
   name: '',
   displayName: '',
-  type: 'restaurant',
+  kind: 'attraction',
+  type: '',
   address: '',
   barangay: '',
   city: '',
@@ -51,11 +58,16 @@ export const EMPTY_CREATE_FORM: CreatePoiForm = {
   tags: '',
   isIslandHotspot: false,
   isTouristArea: false,
-  description: '',
+  oneLiner: '',
+  descriptionShort: '',
+  descriptionLong: '',
+  visitHint: '',
+  accessHint: '',
+  status: 'unknown',
   contactPhone: '',
   website: '',
   priceLevel: '',
-  amenities: '',
+  coverImageUrl: '',
 };
 
 function slugify(str: string): string {
@@ -90,9 +102,11 @@ export function usePOIData() {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
 
   /* Lookup tables from backend */
-  const [poiTypes, setPoiTypes] = useState<{ id: string; label: string }[]>([]);
+  const [poiKinds, setPoiKinds] = useState<POIKind[]>([]);
+  const [poiTypes, setPoiTypes] = useState<{ id: string; label: string; kindId?: string }[]>([]);
   const [dropoffZoneTypes, setDropoffZoneTypes] = useState<{ id: string; label: string }[]>([]);
   const [roadAccessTypes, setRoadAccessTypes] = useState<{ id: string; label: string }[]>([]);
+  const [kindFilter, setKindFilter] = useState('all');
 
   /* Guard against double-fetch (React Strict Mode / HMR) */
   const hasFetched = useRef(false);
@@ -115,7 +129,7 @@ export function usePOIData() {
   /* ── Fetch sidebar page (server-filtered) ─────── */
 
   const fetchSidebarPage = useCallback(async (
-    params: { search?: string; type?: string; offset?: number; append?: boolean; isActive?: boolean; isVerified?: boolean }
+    params: { search?: string; type?: string; kind?: string; offset?: number; append?: boolean; isActive?: boolean; isVerified?: boolean }
   ) => {
     const { search: q, type, offset = 0, append = false } = params;
     try {
@@ -125,6 +139,7 @@ export function usePOIData() {
       const query: Record<string, any> = { limit: PAGE_SIZE, offset };
       if (q) query.search = q;
       if (type && type !== 'all') query.type = type;
+      if (params.kind && params.kind !== 'all') query.kind = params.kind;
       if (params.isActive !== undefined) query.isActive = params.isActive;
       if (params.isVerified !== undefined) query.isVerified = params.isVerified;
 
@@ -182,34 +197,47 @@ export function usePOIData() {
     fetchSidebarPage({
       search: search || undefined,
       type: categoryFilter,
+      kind: kindFilter,
       offset: sidebarOffset,
       append: true,
       ...statusParams(statusFilter),
     });
-  }, [loadingMore, sidebarHasMore, fetchSidebarPage, search, categoryFilter, statusFilter, sidebarOffset, statusParams]);
+  }, [loadingMore, sidebarHasMore, fetchSidebarPage, search, categoryFilter, kindFilter, statusFilter, sidebarOffset, statusParams]);
 
   /* ── Refresh both streams ─────────────────────── */
 
   const fetchPois = useCallback(async () => {
     await Promise.all([
       fetchMapMarkers(),
-      fetchSidebarPage({ search: search || undefined, type: categoryFilter, ...statusParams(statusFilter) }),
+      fetchSidebarPage({ search: search || undefined, type: categoryFilter, kind: kindFilter, ...statusParams(statusFilter) }),
     ]);
-  }, [fetchMapMarkers, fetchSidebarPage, search, categoryFilter, statusFilter, statusParams]);
+  }, [fetchMapMarkers, fetchSidebarPage, search, categoryFilter, kindFilter, statusFilter, statusParams]);
 
   const fetchPoiTypes = useCallback(async () => {
     try {
-      const types = await poiApi.getPoiTypes();
+      const [kinds, types] = await Promise.all([
+        poiApi.getPoiKinds(),
+        poiApi.getPoiTypes(),
+      ]);
+      if (Array.isArray(kinds)) {
+        setPoiKinds(kinds);
+      }
       if (Array.isArray(types)) {
-        setPoiTypes(types.map(t => ({ id: t.id, label: t.label })));
+        setPoiTypes(types.map(t => ({ id: t.id, label: t.label, kindId: (t as any).kindId })));
       }
     } catch {
+      setPoiKinds([
+        { id: 'attraction', label: 'Tourist Spot', isActive: true, sortOrder: 0 },
+        { id: 'essential', label: 'Essentials', isActive: true, sortOrder: 1 },
+        { id: 'transport', label: 'Transport', isActive: true, sortOrder: 2 },
+        { id: 'merchant', label: 'Shops & Services', isActive: true, sortOrder: 3 },
+        { id: 'public_place', label: 'Public Place', isActive: true, sortOrder: 4 },
+        { id: 'landmark', label: 'Landmark', isActive: true, sortOrder: 5 },
+      ]);
       setPoiTypes([
-        { id: 'restaurant', label: 'Restaurant' },
-        { id: 'mall', label: 'Mall' },
-        { id: 'attraction', label: 'Attraction' },
-        { id: 'cafe', label: 'Cafe' },
-        { id: 'grocery', label: 'Grocery' },
+        { id: 'beach', label: 'Beach', kindId: 'attraction' },
+        { id: 'surf_spot', label: 'Surf Spot', kindId: 'attraction' },
+        { id: 'restaurant', label: 'Restaurant', kindId: 'merchant' },
       ]);
     }
   }, []);
@@ -250,6 +278,7 @@ export function usePOIData() {
       fetchSidebarPage({
         search: search || undefined,
         type: categoryFilter,
+        kind: kindFilter,
         ...statusParams(statusFilter),
       });
     }, SEARCH_DEBOUNCE_MS);
@@ -257,7 +286,7 @@ export function usePOIData() {
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
-  }, [search, categoryFilter, statusFilter, fetchSidebarPage, statusParams]);
+  }, [search, categoryFilter, kindFilter, statusFilter, fetchSidebarPage, statusParams]);
 
   /* ── CRUD ─────────────────────────────────────── */
 
@@ -272,6 +301,7 @@ export function usePOIData() {
       id,
       name: form.name,
       displayName: form.displayName || undefined,
+      kind: form.kind,
       type: form.type,
       centerLat: form.centerLat,
       centerLng: form.centerLng,
@@ -288,12 +318,17 @@ export function usePOIData() {
       isIslandHotspot: form.isIslandHotspot,
       isTouristArea: form.isTouristArea,
       tags,
-      description: form.description || undefined,
+      status: form.status || 'unknown',
+      oneLiner: form.oneLiner || undefined,
+      descriptionShort: form.descriptionShort || undefined,
+      descriptionLong: form.descriptionLong || undefined,
+      visitHint: form.visitHint || undefined,
+      accessHint: form.accessHint || undefined,
       contactPhone: form.contactPhone || undefined,
       website: form.website || undefined,
       priceLevel: form.priceLevel || undefined,
-      amenities: form.amenities ? form.amenities.split(',').map(a => a.trim()).filter(Boolean) : undefined,
-    });
+      coverImageUrl: form.coverImageUrl || undefined,
+    } as any);
     // Update sidebar optimistically
     setSidebarPois(prev => [newEntry, ...prev]);
     setSidebarTotal(prev => prev + 1);
@@ -483,10 +518,10 @@ export function usePOIData() {
   return {
     // state
     mapMarkers, sidebarPois, sidebarTotal, sidebarHasMore, loadingMore,
-    loading, search, categoryFilter, statusFilter, selected,
-    confirmAction, poiTypes, dropoffZoneTypes, roadAccessTypes,
+    loading, search, categoryFilter, kindFilter, statusFilter, selected,
+    confirmAction, poiKinds, poiTypes, dropoffZoneTypes, roadAccessTypes,
     // setters
-    setSearch, setCategoryFilter, setStatusFilter, setSelected, setConfirmAction,
+    setSearch, setCategoryFilter, setKindFilter, setStatusFilter, setSelected, setConfirmAction,
     // actions
     fetchPois, fetchMapMarkers, loadMore,
     createPoi, updatePoi,

@@ -1,8 +1,22 @@
-import { Search, Plus, MapPin, Settings2, CheckSquare, Square, Loader2, Filter } from 'lucide-react';
+import { Search, Plus, MapPin, Settings2, CheckSquare, Square, Loader2, Filter, Layers } from 'lucide-react';
 import { useRef, useCallback, useState, useLayoutEffect } from 'react';
-import type { POI } from '../../../lib/poi-api';
+import type { POI, POIKind } from '../../../lib/poi-api';
 
 /* ── Props ──────────────────────────────────────── */
+
+/** Kind color mapping */
+const KIND_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  attraction:   { bg: 'bg-sky-50 dark:bg-sky-950',       text: 'text-sky-700 dark:text-sky-400',       border: 'border-sky-200 dark:border-sky-800' },
+  essential:    { bg: 'bg-red-50 dark:bg-red-950',       text: 'text-red-700 dark:text-red-400',       border: 'border-red-200 dark:border-red-800' },
+  transport:    { bg: 'bg-indigo-50 dark:bg-indigo-950', text: 'text-indigo-700 dark:text-indigo-400', border: 'border-indigo-200 dark:border-indigo-800' },
+  merchant:     { bg: 'bg-amber-50 dark:bg-amber-950',   text: 'text-amber-700 dark:text-amber-400',   border: 'border-amber-200 dark:border-amber-800' },
+  public_place: { bg: 'bg-green-50 dark:bg-green-950',   text: 'text-green-700 dark:text-green-400',   border: 'border-green-200 dark:border-green-800' },
+  landmark:     { bg: 'bg-purple-50 dark:bg-purple-950', text: 'text-purple-700 dark:text-purple-400', border: 'border-purple-200 dark:border-purple-800' },
+};
+
+function getKindColor(kind: string) {
+  return KIND_COLORS[kind] || { bg: 'bg-gray-50 dark:bg-gray-950', text: 'text-gray-700 dark:text-gray-400', border: 'border-gray-200 dark:border-gray-800' };
+}
 
 interface POISidebarProps {
   pois: POI[];
@@ -12,6 +26,9 @@ interface POISidebarProps {
   onLoadMore: () => void;
   search: string;
   onSearchChange: (v: string) => void;
+  kindFilter: string;
+  onKindChange: (v: string) => void;
+  kinds: POIKind[];
   categoryFilter: string;
   onCategoryChange: (v: string) => void;
   categories: { id: string; label: string }[];
@@ -42,6 +59,7 @@ const OVERSCAN = 5;    // extra rows above/below viewport
 export function POISidebar({
   pois, totalCount, hasMore, loadingMore, onLoadMore,
   search, onSearchChange,
+  kindFilter, onKindChange, kinds,
   categoryFilter, onCategoryChange, categories,
   statusFilter, onStatusChange,
   selected, onSelect, canEdit, canCreate,
@@ -50,6 +68,7 @@ export function POISidebar({
   children,
 }: POISidebarProps) {
   const chips = [{ id: 'all', label: 'All' }, ...categories];
+  const kindChips = [{ id: 'all', label: 'All Kinds' }, ...kinds.map(k => ({ id: k.id, label: k.label }))];
 
   /* ── Virtual scroll state ─────────────────────── */
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -133,6 +152,31 @@ export function POISidebar({
             className="w-full pl-9 pr-3 py-2 text-[13px] bg-[var(--input-background)] border border-[var(--border)] rounded-lg outline-none focus:ring-2 focus:ring-[var(--ring)]/20 text-[var(--foreground)]"
             aria-label="Search POIs"
           />
+        </div>
+
+        {/* Kind filter chips */}
+        <div className="flex items-center gap-1 mt-2 flex-wrap">
+          <Layers size={11} className="text-[var(--muted-foreground)] shrink-0" />
+          {kindChips.map(k => {
+            const isActive = kindFilter === (k.id === 'all' ? '' : k.id);
+            const colors = k.id !== 'all' ? getKindColor(k.id) : null;
+            return (
+              <button
+                key={k.id}
+                onClick={() => onKindChange(k.id === 'all' ? '' : k.id)}
+                className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${
+                  isActive
+                    ? colors
+                      ? `${colors.bg} ${colors.text} ${colors.border}`
+                      : 'bg-[var(--foreground)] text-[var(--background)] border-transparent'
+                    : 'bg-[var(--accent)] text-[var(--muted-foreground)] border-transparent hover:bg-[var(--accent)]/80'
+                }`}
+                style={{ fontWeight: 500 }}
+              >
+                {k.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Category chips */}
@@ -235,10 +279,24 @@ export function POISidebar({
                     <p className="text-[11px] text-[var(--muted-foreground)] truncate">
                       {poi.fullAddress || poi.barangay || 'No address'}
                     </p>
-                    <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      {poi.kind && (() => { const c = getKindColor(poi.kind); return (
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded border ${c.bg} ${c.text} ${c.border}`} style={{ fontWeight: 600 }}>
+                          {poi.kind.replace('_', ' ')}
+                        </span>
+                      ); })()}
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent)] text-[var(--muted-foreground)]">
                         {poi.type}
                       </span>
+                      {poi.status && poi.status !== 'unknown' && (
+                        <span className={`text-[9px] px-1 py-0.5 rounded ${
+                          poi.status === 'open' ? 'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950'
+                          : poi.status === 'closed' ? 'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-950'
+                          : 'text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950'
+                        }`}>
+                          {poi.status.replace('_', ' ')}
+                        </span>
+                      )}
                       {poi.isVerified && (
                         <span className="text-[10px] text-emerald-600 dark:text-emerald-400">Verified</span>
                       )}

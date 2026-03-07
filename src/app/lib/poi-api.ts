@@ -4,17 +4,41 @@ import { request } from './api';
 export interface MapMarker {
   id: string;
   name: string;
+  kind: string;
   type: string;
+  status: string;
   centerLat: number;
   centerLng: number;
   isVerified: boolean;
   isActive: boolean;
+  coverImageUrl?: string;
 }
+
+export interface POIKind {
+  id: string;
+  label: string;
+  eyebrowLabel?: string;
+  iconUrl?: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export type POIStatus = 'open' | 'closed' | 'temporarily_closed' | 'seasonal' | 'unknown';
+
+export const POI_STATUS_OPTIONS: { value: POIStatus; label: string }[] = [
+  { value: 'open', label: 'Open' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'temporarily_closed', label: 'Temporarily Closed' },
+  { value: 'seasonal', label: 'Seasonal' },
+  { value: 'unknown', label: 'Unknown' },
+];
 
 export interface POI {
   id: string;
   name: string;
   displayName?: string;
+  shortLabel?: string;
+  kind: string;
   type: string;
   centerLat: number;
   centerLng: number;
@@ -29,26 +53,36 @@ export interface POI {
   buildingName?: string;
   floor?: string;
   serviceAreaId?: string;
+  // UX fields
+  oneLiner?: string;
+  descriptionShort?: string;
+  descriptionLong?: string;
+  visitHint?: string;
+  accessHint?: string;
+  trustBadges: string[];
+  status: POIStatus;
   priorityScore: number;
+  popularityScore: number;
   isIslandHotspot: boolean;
   isTouristArea: boolean;
   isActive: boolean;
   isVerified: boolean;
   visibility: 'public' | 'private' | 'ops_only';
   tags: string[];
-  description?: string;
   operatingHours?: Record<string, any>;
   contactPhone?: string;
   website?: string;
   socialLinks?: Record<string, string>;
   priceLevel?: string;
-  amenities?: string[];
+  coverImageUrl?: string;
   merchantId?: string;
   googlePlaceId?: string;
   osmId?: string;
   source: string;
   confidence: number;
   editorialLock: Record<string, boolean>;
+  lastVerifiedAt?: string;
+  verificationSource?: string;
   createdAt: string;
   updatedAt: string;
   updatedBy?: string;
@@ -59,6 +93,13 @@ export interface POI {
     icon?: { id: number; url: string; source?: string };
     gallery?: { id: number; url: string; position: number; source?: string }[];
   };
+  // Domain profiles (only one will be set, matching kind)
+  profile?: Record<string, any> | null;
+  profileType?: 'attraction' | 'essential' | 'transport' | null;
+  accessibility?: Record<string, any> | null;
+  safety?: Record<string, any> | null;
+  fees?: Record<string, any>[];
+  tips?: Record<string, any>[];
 }
 
 export interface POIAnchor {
@@ -125,7 +166,11 @@ export const poiApi = {
   deletePoi: (id: string) => request<{ success: boolean }>(`/pois/${id}`, { method: 'DELETE' }),
 
   // Lookup Types (read-only for dropdowns)
-  getPoiTypes: () => request<{ id: string; label: string; iconUrl: string | null }[]>('/pois/types'),
+  getPoiKinds: () => request<POIKind[]>('/pois/kinds'),
+  getPoiTypes: (kindId?: string) => {
+    const q = kindId ? `?kindId=${kindId}` : '';
+    return request<{ id: string; label: string; kindId: string; iconUrl: string | null }[]>(`/pois/types${q}`);
+  },
   getDropoffZoneTypes: () => request<{ id: string; label: string; iconUrl: string | null }[]>('/pois/dropoff-zone-types'),
   getRoadAccessTypes: () => request<{ id: string; label: string; iconUrl: string | null }[]>('/pois/road-access-types'),
 

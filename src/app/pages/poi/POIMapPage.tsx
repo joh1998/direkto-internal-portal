@@ -28,10 +28,10 @@ export function POIMapPage() {
   /* ── Data ─────────────────────────────────────── */
 
   const {
-    loading, search, categoryFilter, statusFilter, selected,
+    loading, search, categoryFilter, kindFilter, statusFilter, selected,
     mapMarkers, sidebarPois, sidebarTotal, sidebarHasMore, loadingMore,
-    confirmAction, poiTypes, dropoffZoneTypes, roadAccessTypes,
-    setSearch, setCategoryFilter, setStatusFilter, setSelected, setConfirmAction,
+    confirmAction, poiKinds, poiTypes, dropoffZoneTypes, roadAccessTypes,
+    setSearch, setCategoryFilter, setKindFilter, setStatusFilter, setSelected, setConfirmAction,
     createPoi, updatePoi, loadMore,
     executeConfirmAction,
     verifyAnchor, setDefaultAnchor, deleteAnchor, createAnchor, updateAnchor,
@@ -240,6 +240,9 @@ export function POIMapPage() {
         onLoadMore={loadMore}
         search={search}
         onSearchChange={setSearch}
+        kindFilter={kindFilter}
+        onKindChange={setKindFilter}
+        kinds={poiKinds}
         categoryFilter={categoryFilter}
         onCategoryChange={setCategoryFilter}
         statusFilter={statusFilter}
@@ -271,6 +274,7 @@ export function POIMapPage() {
         )}
         {createMode && (
           <POICreateForm
+            poiKinds={poiKinds}
             poiTypes={poiTypes}
             onCancel={() => { setCreateMode(false); setMapClickCoords(null); hideDraggableMarker(); }}
             onSubmit={handleCreate}
@@ -332,6 +336,7 @@ export function POIMapPage() {
             onUpdateAnchor={updateAnchor}
             onDeleteMedia={deleteMedia}
             onAddMedia={addMedia}
+            poiKinds={poiKinds}
             poiTypes={poiTypes}
             dropoffZoneTypes={dropoffZoneTypes}
             roadAccessTypes={roadAccessTypes}

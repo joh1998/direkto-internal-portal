@@ -6,7 +6,8 @@ import {
   Lock, Car, CloudRain, Phone, Navigation, Store, Link2,
 } from 'lucide-react';
 import { StatusBadge } from '../../../components/shared/StatusBadge';
-import type { POI, POIAnchor } from '../../../lib/poi-api';
+import type { POI, POIAnchor, POIKind, POIStatus } from '../../../lib/poi-api';
+import { POI_STATUS_OPTIONS } from '../../../lib/poi-api';
 import type { ConfirmAction } from '../hooks/usePOIData';
 import { api } from '../../../lib/api';
 
@@ -33,7 +34,8 @@ interface POIDetailPanelProps {
   onUpdateAnchor: (id: string, data: Record<string, any>) => Promise<void>;
   onDeleteMedia: (mediaId: number) => Promise<void>;
   onAddMedia: (poiId: string, kind: 'cover' | 'gallery' | 'icon', url: string) => Promise<void>;
-  poiTypes: { id: string; label: string }[];
+  poiTypes: { id: string; label: string; kindId?: string }[];
+  poiKinds: POIKind[];
   dropoffZoneTypes: { id: string; label: string }[];
   roadAccessTypes: { id: string; label: string }[];
   // Anchor placement (drag-to-place)
@@ -60,7 +62,7 @@ export function POIDetailPanel({
   canApprove, canEdit, canDelete,
   onVerifyAnchor, onSetDefaultAnchor, onDeleteAnchor, onCreateAnchor, onUpdateAnchor,
   onDeleteMedia, onAddMedia,
-  poiTypes, dropoffZoneTypes, roadAccessTypes,
+  poiTypes, poiKinds, dropoffZoneTypes, roadAccessTypes,
   anchorPlacing, anchorDragCoords,
   onStartAnchorPlace, onCancelAnchorPlace, onConfirmAnchorPlace,
   onStartAnchorEdit, onCancelAnchorEdit,
@@ -72,7 +74,9 @@ export function POIDetailPanel({
   const [editFields, setEditFields] = useState({
     name: poi.name,
     displayName: poi.displayName || '',
+    kind: poi.kind || 'attraction',
     type: poi.type,
+    status: (poi.status || 'unknown') as POIStatus,
     fullAddress: poi.fullAddress || '',
     barangay: poi.barangay || '',
     city: poi.city || '',
@@ -81,11 +85,15 @@ export function POIDetailPanel({
     visibility: poi.visibility,
     isIslandHotspot: poi.isIslandHotspot,
     isTouristArea: poi.isTouristArea,
-    description: poi.description || '',
+    oneLiner: poi.oneLiner || '',
+    descriptionShort: poi.descriptionShort || '',
+    descriptionLong: poi.descriptionLong || '',
+    visitHint: poi.visitHint || '',
+    accessHint: poi.accessHint || '',
+    coverImageUrl: poi.coverImageUrl || '',
     contactPhone: poi.contactPhone || '',
     website: poi.website || '',
     priceLevel: poi.priceLevel || '',
-    amenities: (poi.amenities || []).join(', '),
     operatingHours: JSON.stringify(poi.operatingHours || {}, null, 2),
     socialLinks: JSON.stringify(poi.socialLinks || {}, null, 2),
   });
@@ -126,7 +134,9 @@ export function POIDetailPanel({
       await onUpdatePoi(poi.id, {
         name: editFields.name,
         displayName: editFields.displayName || undefined,
+        kind: editFields.kind,
         type: editFields.type,
+        status: editFields.status,
         fullAddress: editFields.fullAddress || undefined,
         barangay: editFields.barangay || undefined,
         city: editFields.city || undefined,
@@ -135,11 +145,15 @@ export function POIDetailPanel({
         visibility: editFields.visibility,
         isIslandHotspot: editFields.isIslandHotspot,
         isTouristArea: editFields.isTouristArea,
-        description: editFields.description || undefined,
+        oneLiner: editFields.oneLiner || undefined,
+        descriptionShort: editFields.descriptionShort || undefined,
+        descriptionLong: editFields.descriptionLong || undefined,
+        visitHint: editFields.visitHint || undefined,
+        accessHint: editFields.accessHint || undefined,
+        coverImageUrl: editFields.coverImageUrl || undefined,
         contactPhone: editFields.contactPhone || undefined,
         website: editFields.website || undefined,
         priceLevel: editFields.priceLevel || undefined,
-        amenities: editFields.amenities ? editFields.amenities.split(',').map((a: string) => a.trim()).filter(Boolean) : [],
         operatingHours: editFields.operatingHours ? (() => { try { return JSON.parse(editFields.operatingHours); } catch { return undefined; } })() : undefined,
         socialLinks: editFields.socialLinks ? (() => { try { return JSON.parse(editFields.socialLinks); } catch { return undefined; } })() : undefined,
       } as any);
@@ -295,15 +309,22 @@ export function POIDetailPanel({
                   setEditMode(true);
                   setEditFields({
                     name: poi.name, displayName: poi.displayName || '',
-                    type: poi.type, fullAddress: poi.fullAddress || '',
+                    kind: poi.kind || 'attraction',
+                    type: poi.type,
+                    status: (poi.status || 'unknown') as POIStatus,
+                    fullAddress: poi.fullAddress || '',
                     barangay: poi.barangay || '', city: poi.city || '', province: poi.province || '',
                     priorityScore: poi.priorityScore, visibility: poi.visibility,
                     isIslandHotspot: poi.isIslandHotspot, isTouristArea: poi.isTouristArea,
-                    description: poi.description || '',
+                    oneLiner: poi.oneLiner || '',
+                    descriptionShort: poi.descriptionShort || '',
+                    descriptionLong: poi.descriptionLong || '',
+                    visitHint: poi.visitHint || '',
+                    accessHint: poi.accessHint || '',
+                    coverImageUrl: poi.coverImageUrl || '',
                     contactPhone: poi.contactPhone || '',
                     website: poi.website || '',
                     priceLevel: poi.priceLevel || '',
-                    amenities: (poi.amenities || []).join(', '),
                     operatingHours: JSON.stringify(poi.operatingHours || {}, null, 2),
                     socialLinks: JSON.stringify(poi.socialLinks || {}, null, 2),
                   });
@@ -326,6 +347,20 @@ export function POIDetailPanel({
         <div className="flex gap-1.5 flex-wrap">
           <StatusBadge status={poi.isVerified ? 'verified' : 'pending'} />
           <StatusBadge status={poi.isActive ? 'active' : 'inactive'} />
+          {poi.kind && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950 dark:text-sky-400 dark:border-sky-800" style={{ fontWeight: 600 }}>
+              {poi.kind.replace('_', ' ')}
+            </span>
+          )}
+          {poi.status && poi.status !== 'unknown' && (
+            <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+              poi.status === 'open' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800'
+              : poi.status === 'closed' ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800'
+              : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800'
+            }`}>
+              {poi.status.replace('_', ' ')}
+            </span>
+          )}
           <span className="text-[10px] px-2 py-0.5 rounded-full border border-[var(--border)] text-[var(--muted-foreground)]">
             {poi.visibility}
           </span>
@@ -361,9 +396,26 @@ export function POIDetailPanel({
         {editMode ? (
           <div className="space-y-2">
             <input value={editFields.displayName} onChange={e => setEditFields({ ...editFields, displayName: e.target.value })} placeholder="Display name (user-facing)" className={inputCls} />
-            <select value={editFields.type} onChange={e => setEditFields({ ...editFields, type: e.target.value })} className={inputCls}>
-              {poiTypes.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </select>
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <label className="text-[10px] text-[var(--muted-foreground)]" style={{ fontWeight: 600 }}>Kind</label>
+                <select value={editFields.kind} onChange={e => setEditFields({ ...editFields, kind: e.target.value })} className={inputCls}>
+                  {poiKinds.map(k => <option key={k.id} value={k.id}>{k.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-[var(--muted-foreground)]" style={{ fontWeight: 600 }}>Type</label>
+                <select value={editFields.type} onChange={e => setEditFields({ ...editFields, type: e.target.value })} className={inputCls}>
+                  {poiTypes.filter(t => !t.kindId || t.kindId === editFields.kind).map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] text-[var(--muted-foreground)]" style={{ fontWeight: 600 }}>Status</label>
+              <select value={editFields.status} onChange={e => setEditFields({ ...editFields, status: e.target.value as POIStatus })} className={inputCls}>
+                {POI_STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
             <input value={editFields.fullAddress} onChange={e => setEditFields({ ...editFields, fullAddress: e.target.value })} placeholder="Full address" className={inputCls} />
             <div className="grid grid-cols-3 gap-1.5">
               <input value={editFields.barangay} onChange={e => setEditFields({ ...editFields, barangay: e.target.value })} placeholder="Barangay" className={inputCls} />
@@ -398,7 +450,12 @@ export function POIDetailPanel({
             {/* ── Detail Fields ── */}
             <div className="pt-2 border-t border-[var(--border)] space-y-2">
               <p className="text-[10px] text-[var(--muted-foreground)]" style={{ fontWeight: 600 }}>Detail Fields</p>
-              <textarea value={editFields.description} onChange={e => setEditFields({ ...editFields, description: e.target.value })} placeholder="Description" rows={3} className={`${inputCls} resize-none`} />
+              <input value={editFields.oneLiner} onChange={e => setEditFields({ ...editFields, oneLiner: e.target.value })} placeholder="One-liner (e.g. Best sunset view)" className={inputCls} />
+              <textarea value={editFields.descriptionShort} onChange={e => setEditFields({ ...editFields, descriptionShort: e.target.value })} placeholder="Short description (1-2 sentences)" rows={2} className={`${inputCls} resize-none`} />
+              <textarea value={editFields.descriptionLong} onChange={e => setEditFields({ ...editFields, descriptionLong: e.target.value })} placeholder="Full description" rows={4} className={`${inputCls} resize-none`} />
+              <input value={editFields.visitHint} onChange={e => setEditFields({ ...editFields, visitHint: e.target.value })} placeholder="Visit hint (e.g. Best in early morning)" className={inputCls} />
+              <input value={editFields.accessHint} onChange={e => setEditFields({ ...editFields, accessHint: e.target.value })} placeholder="Access hint (e.g. Take habal-habal from GL)" className={inputCls} />
+              <input value={editFields.coverImageUrl} onChange={e => setEditFields({ ...editFields, coverImageUrl: e.target.value })} placeholder="Cover image URL" className={inputCls} />
               <input value={editFields.contactPhone} onChange={e => setEditFields({ ...editFields, contactPhone: e.target.value })} placeholder="Contact phone" className={inputCls} />
               <input value={editFields.website} onChange={e => setEditFields({ ...editFields, website: e.target.value })} placeholder="Website URL" className={inputCls} />
               <div>
@@ -412,7 +469,6 @@ export function POIDetailPanel({
                   <option value="₱₱₱₱">₱₱₱₱ Premium</option>
                 </select>
               </div>
-              <input value={editFields.amenities} onChange={e => setEditFields({ ...editFields, amenities: e.target.value })} placeholder="Amenities (comma-separated)" className={inputCls} />
               <div>
                 <label className="text-[10px] text-[var(--muted-foreground)]">Operating Hours (JSON)</label>
                 <textarea value={editFields.operatingHours} onChange={e => setEditFields({ ...editFields, operatingHours: e.target.value })} rows={4} className={`${inputCls} resize-none font-mono text-[11px]`} placeholder='{"mon":{"open":"08:00","close":"22:00"}}' />
@@ -434,6 +490,10 @@ export function POIDetailPanel({
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 text-[12px]">
+            <div>
+              <p className="text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>Kind</p>
+              <p className="text-[var(--foreground)] capitalize">{(poi.kind || 'unknown').replace('_', ' ')}</p>
+            </div>
             <div>
               <p className="text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>Category</p>
               <p className="text-[var(--foreground)]">{poi.type}</p>
@@ -483,10 +543,52 @@ export function POIDetailPanel({
               </div>
             )}
             {/* ── New detail fields in view mode ── */}
-            {poi.description && (
+            {poi.oneLiner && (
               <div className="col-span-2">
-                <p className="text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>Description</p>
-                <p className="text-[var(--foreground)] text-[11px] leading-relaxed">{poi.description}</p>
+                <p className="text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>One-liner</p>
+                <p className="text-[var(--foreground)] text-[12px] italic">{poi.oneLiner}</p>
+              </div>
+            )}
+            {poi.descriptionShort && (
+              <div className="col-span-2">
+                <p className="text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>Short Description</p>
+                <p className="text-[var(--foreground)] text-[11px] leading-relaxed">{poi.descriptionShort}</p>
+              </div>
+            )}
+            {poi.descriptionLong && (
+              <div className="col-span-2">
+                <p className="text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>Full Description</p>
+                <p className="text-[var(--foreground)] text-[11px] leading-relaxed">{poi.descriptionLong}</p>
+              </div>
+            )}
+            {poi.visitHint && (
+              <div className="col-span-2">
+                <p className="text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>Visit Hint</p>
+                <p className="text-[var(--foreground)] text-[11px]">{poi.visitHint}</p>
+              </div>
+            )}
+            {poi.accessHint && (
+              <div className="col-span-2">
+                <p className="text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>Access Hint</p>
+                <p className="text-[var(--foreground)] text-[11px]">{poi.accessHint}</p>
+              </div>
+            )}
+            {poi.coverImageUrl && (
+              <div className="col-span-2">
+                <p className="text-[var(--muted-foreground)] mb-1" style={{ fontWeight: 500 }}>Cover Image</p>
+                <img src={poi.coverImageUrl} alt="Cover" className="w-full h-24 object-cover rounded-lg" />
+              </div>
+            )}
+            {poi.trustBadges && poi.trustBadges.length > 0 && (
+              <div className="col-span-2">
+                <p className="text-[var(--muted-foreground)] mb-1" style={{ fontWeight: 500 }}>Trust Badges</p>
+                <div className="flex flex-wrap gap-1">
+                  {poi.trustBadges.map((b: string) => (
+                    <span key={b} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                      {b}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
             {poi.priceLevel && (
@@ -505,18 +607,6 @@ export function POIDetailPanel({
               <div className="col-span-2">
                 <p className="text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>Website</p>
                 <a href={poi.website} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline truncate block">{poi.website}</a>
-              </div>
-            )}
-            {(poi.amenities?.length || 0) > 0 && (
-              <div className="col-span-2">
-                <p className="text-[var(--muted-foreground)] mb-1" style={{ fontWeight: 500 }}>Amenities</p>
-                <div className="flex flex-wrap gap-1">
-                  {poi.amenities!.map(a => (
-                    <span key={a} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                      {a}
-                    </span>
-                  ))}
-                </div>
               </div>
             )}
             {poi.operatingHours && Object.keys(poi.operatingHours).length > 0 && (

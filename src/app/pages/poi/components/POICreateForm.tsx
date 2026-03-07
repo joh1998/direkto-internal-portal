@@ -1,11 +1,14 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MapPin, AlertCircle, Loader2 } from 'lucide-react';
 import type { CreatePoiForm } from '../hooks/usePOIData';
+import type { POIKind, POIStatus } from '../../../lib/poi-api';
+import { POI_STATUS_OPTIONS } from '../../../lib/poi-api';
 
 /* ── Props ──────────────────────────────────────── */
 
 interface POICreateFormProps {
-  poiTypes: { id: string; label: string }[];
+  poiTypes: { id: string; label: string; kindId?: string }[];
+  poiKinds: POIKind[];
   onCancel: () => void;
   onSubmit: (form: CreatePoiForm) => Promise<void>;
   /** Coordinates set by dragging the marker or clicking on the map */
@@ -47,12 +50,13 @@ async function reverseGeocode(lat: number, lng: number): Promise<{
 
 /* ── Component ──────────────────────────────────── */
 
-export function POICreateForm({ poiTypes, onCancel, onSubmit, mapCoords }: POICreateFormProps) {
+export function POICreateForm({ poiTypes, poiKinds, onCancel, onSubmit, mapCoords }: POICreateFormProps) {
   const [form, setForm] = useState<CreatePoiForm>({
     id: '',
     name: '',
     displayName: '',
-    type: poiTypes[0]?.id || 'restaurant',
+    kind: poiKinds[0]?.id || 'attraction',
+    type: '',
     address: '',
     barangay: '',
     city: '',
@@ -64,12 +68,30 @@ export function POICreateForm({ poiTypes, onCancel, onSubmit, mapCoords }: POICr
     tags: '',
     isIslandHotspot: false,
     isTouristArea: false,
-    description: '',
+    oneLiner: '',
+    descriptionShort: '',
+    descriptionLong: '',
+    visitHint: '',
+    accessHint: '',
+    status: 'unknown',
     contactPhone: '',
     website: '',
     priceLevel: '',
-    amenities: '',
+    coverImageUrl: '',
   });
+
+  // Filter types by selected kind
+  const filteredTypes = useMemo(
+    () => poiTypes.filter(t => t.kindId === form.kind),
+    [poiTypes, form.kind],
+  );
+
+  // Auto-select first type when kind changes
+  useEffect(() => {
+    if (filteredTypes.length > 0 && !filteredTypes.find(t => t.id === form.type)) {
+      setForm(prev => ({ ...prev, type: filteredTypes[0].id }));
+    }
+  }, [form.kind, filteredTypes]);
   const [saving, setSaving] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -203,16 +225,48 @@ export function POICreateForm({ poiTypes, onCancel, onSubmit, mapCoords }: POICr
         )}
       </div>
 
-      {/* Type */}
-      <select
-        value={form.type}
-        onChange={e => setForm({ ...form, type: e.target.value })}
-        className={inputCls}
-      >
-        {poiTypes.map(t => (
-          <option key={t.id} value={t.id}>{t.label}</option>
-        ))}
-      </select>
+      {/* Kind */}
+      <div>
+        <label className="text-[10px] text-[var(--muted-foreground)] mb-1 block" style={{ fontWeight: 600 }}>Kind *</label>
+        <select
+          value={form.kind}
+          onChange={e => setForm({ ...form, kind: e.target.value })}
+          className={inputCls}
+        >
+          {poiKinds.map(k => (
+            <option key={k.id} value={k.id}>{k.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Type (filtered by kind) */}
+      <div>
+        <label className="text-[10px] text-[var(--muted-foreground)] mb-1 block" style={{ fontWeight: 600 }}>Type *</label>
+        <select
+          value={form.type}
+          onChange={e => setForm({ ...form, type: e.target.value })}
+          className={inputCls}
+        >
+          {filteredTypes.length === 0 && <option value="">No types for this kind</option>}
+          {filteredTypes.map(t => (
+            <option key={t.id} value={t.id}>{t.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Status */}
+      <div>
+        <label className="text-[10px] text-[var(--muted-foreground)] mb-1 block" style={{ fontWeight: 600 }}>Status</label>
+        <select
+          value={form.status}
+          onChange={e => setForm({ ...form, status: e.target.value as POIStatus })}
+          className={inputCls}
+        >
+          {POI_STATUS_OPTIONS.map(s => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
+      </div>
 
       {/* Coordinates */}
       <div>
@@ -308,13 +362,54 @@ export function POICreateForm({ poiTypes, onCancel, onSubmit, mapCoords }: POICr
           <div className="pt-2 border-t border-[var(--border)] space-y-3">
             <p className="text-[11px] text-[var(--muted-foreground)]" style={{ fontWeight: 600 }}>Detail Fields (customer-facing)</p>
 
-            {/* Description */}
+            {/* One-liner */}
+            <input
+              value={form.oneLiner}
+              onChange={e => setForm({ ...form, oneLiner: e.target.value })}
+              placeholder="One-liner (e.g. Best sunset view in Siargao)"
+              className={inputCls}
+            />
+
+            {/* Short Description */}
             <textarea
-              value={form.description}
-              onChange={e => setForm({ ...form, description: e.target.value })}
-              placeholder="Description (about this place)"
-              rows={3}
+              value={form.descriptionShort}
+              onChange={e => setForm({ ...form, descriptionShort: e.target.value })}
+              placeholder="Short description (1-2 sentences)"
+              rows={2}
               className={`${inputCls} resize-none`}
+            />
+
+            {/* Long Description */}
+            <textarea
+              value={form.descriptionLong}
+              onChange={e => setForm({ ...form, descriptionLong: e.target.value })}
+              placeholder="Full description (detailed info about this place)"
+              rows={4}
+              className={`${inputCls} resize-none`}
+            />
+
+            {/* Visit Hint */}
+            <input
+              value={form.visitHint}
+              onChange={e => setForm({ ...form, visitHint: e.target.value })}
+              placeholder="Visit hint (e.g. Best visited early morning)"
+              className={inputCls}
+            />
+
+            {/* Access Hint */}
+            <input
+              value={form.accessHint}
+              onChange={e => setForm({ ...form, accessHint: e.target.value })}
+              placeholder="Access hint (e.g. Take habal-habal from GL junction)"
+              className={inputCls}
+            />
+
+            {/* Cover Image URL */}
+            <input
+              value={form.coverImageUrl}
+              onChange={e => setForm({ ...form, coverImageUrl: e.target.value })}
+              placeholder="Cover image URL"
+              className={inputCls}
             />
 
             {/* Contact Phone */}
@@ -349,14 +444,6 @@ export function POICreateForm({ poiTypes, onCancel, onSubmit, mapCoords }: POICr
                 <option value="₱₱₱₱">₱₱₱₱ — Premium</option>
               </select>
             </div>
-
-            {/* Amenities */}
-            <input
-              value={form.amenities}
-              onChange={e => setForm({ ...form, amenities: e.target.value })}
-              placeholder="Amenities (comma-separated, e.g. wifi, parking, restroom)"
-              className={inputCls}
-            />
           </div>
         </div>
       )}
