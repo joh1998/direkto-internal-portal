@@ -44,7 +44,7 @@ export function DriversPage() {
 
   /* ── API data ─────────────────────────────────────────────── */
   const params: DriverSearchParams = { search: search || undefined, page, limit: 20 };
-  if (statusFilter === 'pending') params.isVerified = false;
+  if (statusFilter === 'all') params.isVerified = true;
   else if (statusFilter !== 'all') params.status = statusFilter.toUpperCase();
 
   const { data, isLoading, error, refetch } = useApiQuery<PaginatedResponse<ApiDriver>>(
@@ -171,7 +171,6 @@ export function DriversPage() {
             options: [
               { label: 'Online', value: 'online' },
               { label: 'Offline', value: 'offline' },
-              { label: 'Pending', value: 'pending' },
               { label: 'Suspended', value: 'suspended' },
             ],
             value: statusFilter,

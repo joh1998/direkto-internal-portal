@@ -772,6 +772,13 @@ export function DriverDetailPage() {
   }
 
   const d = driver;
+
+  // If driver is not approved yet, redirect to the pending review page
+  if (!d.isVerified && ['SUBMITTED', 'UNDER_REVIEW', 'NEEDS_FIX', 'DRAFT'].includes(d.applicationStatus)) {
+    navigate(`/drivers/pending/${d.id}`, { replace: true });
+    return null;
+  }
+
   const status = getDriverStatus(d);
   const rating = parseFloat(d.rating) || 0;
 

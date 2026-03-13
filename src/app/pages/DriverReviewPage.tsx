@@ -7,13 +7,14 @@ import { useParams, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Loader2, UserCheck, AlertCircle,
-  FileText, Car, Eye, Image, Clock,
+  FileText, Car, Eye, Image, Clock, ScanFace,
   AlertTriangle, CheckCircle, XCircle, ArrowRightLeft, Key,
   ExternalLink, RefreshCw,
 } from 'lucide-react';
 import { StatusBadge } from '../components/shared/StatusBadge';
 import {
   fetchDriverById, fetchDriverVehicles, reviewDriver, reviewVehicleChange,
+  reviewLivenessSession,
   type ApiDriver, type ApiDriverVehicle,
 } from '../lib/drivers-api';
 
@@ -138,6 +139,7 @@ function FixRequirementsList({ items }: { items: Array<{ field: string; reason: 
 
 // Reusable fix-field options for driver + vehicle documents
 const DRIVER_FIX_FIELDS = [
+  { value: 'selfiePhoto', label: 'Selfie / Profile Photo' },
   { value: 'licensePhotoUrl', label: 'License Photo' },
   { value: 'photoWithIdUrl', label: 'Photo with ID' },
   { value: 'nbiClearanceUrl', label: 'NBI Clearance' },
@@ -319,11 +321,286 @@ function ReviewModal({
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   SELFIE VERIFICATION TAB
+   ═══════════════════════════════════════════════════════════════ */
+
+function selfieStatusVariant(s: string) {
+  switch (s) {
+    case 'VERIFIED':       return 'approved';
+    case 'CONSUMED':       return 'active';
+    case 'MANUAL_REVIEW':  return 'warning';
+    case 'FAILED':         return 'rejected';
+    case 'PENDING':        return 'pending';
+    case 'EXPIRED':        return 'inactive';
+    default:               return 'inactive';
+  }
+}
+
+function SelfieTab({ driver, onReviewed }: { driver: ApiDriver; onReviewed: () => void }) {
+  const selfie = (driver as any).selfieVerification as {
+    publicId: string;
+    status: string;
+    method: string;
+    challengeType: string;
+    reviewReason: string | null;
+    verifiedAt: string | null;
+    photoUrl: string | null;
+    metrics: Record<string, any> | null;
+    attemptCount: number;
+    createdAt: string;
+    consumedAt: string | null;
+  } | null;
+
+  const userPhotoUrl = driver.user?.photoUrl as string | null;
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [rejectNotes, setRejectNotes] = useState('');
+  const [showRejectInput, setShowRejectInput] = useState(false);
+  const [photoExpanded, setPhotoExpanded] = useState<'selfie' | 'profile' | null>(null);
+
+  const handleLivenessReview = useCallback(async (decision: 'VERIFIED' | 'FAILED', notes?: string) => {
+    if (!selfie?.publicId) return;
+    setReviewLoading(true);
+    try {
+      await reviewLivenessSession(selfie.publicId, decision, notes);
+      toast.success(`Selfie ${decision === 'VERIFIED' ? 'approved' : 'rejected'} successfully`);
+      onReviewed();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to review selfie');
+    } finally {
+      setReviewLoading(false);
+      setShowRejectInput(false);
+      setRejectNotes('');
+    }
+  }, [selfie?.publicId, onReviewed]);
+
+  // No selfie session at all
+  if (!selfie) {
+    return (
+      <div className="space-y-6">
+        <div className="p-6 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-center">
+          <ScanFace size={32} className="mx-auto text-amber-500 mb-2" />
+          <h3 className="text-[14px] text-amber-800 dark:text-amber-300" style={{ fontWeight: 600 }}>
+            No Selfie Verification
+          </h3>
+          <p className="text-[12px] text-amber-700 dark:text-amber-400 mt-1">
+            This driver has not completed the selfie verification step yet.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const needsReview = selfie.status === 'MANUAL_REVIEW';
+  const metrics = selfie.metrics ?? {};
+
+  return (
+    <div className="space-y-6">
+      {/* Status banner */}
+      {needsReview && (
+        <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+          <div className="flex items-center gap-2 mb-1">
+            <AlertTriangle size={14} className="text-amber-600" />
+            <span className="text-[13px] text-amber-800 dark:text-amber-300" style={{ fontWeight: 600 }}>
+              Selfie Requires Manual Review
+            </span>
+          </div>
+          <p className="text-[12px] text-amber-700 dark:text-amber-400">
+            {selfie.reviewReason || 'The liveness check flagged this session for human review. Verify the selfie before approving the application.'}
+          </p>
+        </div>
+      )}
+
+      {selfie.status === 'VERIFIED' && (
+        <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+          <div className="flex items-center gap-2">
+            <CheckCircle size={14} className="text-emerald-600" />
+            <span className="text-[13px] text-emerald-800 dark:text-emerald-300" style={{ fontWeight: 600 }}>Selfie Verified</span>
+          </div>
+          <p className="text-[12px] text-emerald-700 dark:text-emerald-400 mt-1">
+            Liveness check passed{selfie.verifiedAt ? ` on ${formatDateTime(selfie.verifiedAt)}` : ''}.
+          </p>
+        </div>
+      )}
+
+      {selfie.status === 'FAILED' && (
+        <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
+          <div className="flex items-center gap-2">
+            <XCircle size={14} className="text-red-600" />
+            <span className="text-[13px] text-red-800 dark:text-red-300" style={{ fontWeight: 600 }}>Selfie Failed</span>
+          </div>
+          <p className="text-[12px] text-red-700 dark:text-red-400 mt-1">
+            {selfie.reviewReason || 'Liveness check failed.'}
+          </p>
+        </div>
+      )}
+
+      {/* Photos side by side */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Profile photo (uploaded after liveness) */}
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+          <h3 className="text-[13px] text-[var(--muted-foreground)] mb-3 flex items-center gap-1.5" style={{ fontWeight: 600 }}>
+            <Image size={13} /> PROFILE PHOTO
+          </h3>
+          {userPhotoUrl ? (
+            <button onClick={() => setPhotoExpanded('profile')}
+              className="group w-full rounded-lg border border-[var(--border)] overflow-hidden hover:border-[var(--primary)] transition-colors">
+              <div className="aspect-square bg-[var(--accent)] flex items-center justify-center overflow-hidden relative">
+                <img src={userPhotoUrl} alt="Profile" className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                  <Eye size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+              </div>
+            </button>
+          ) : (
+            <div className="aspect-square rounded-lg border border-dashed border-[var(--border)] flex items-center justify-center">
+              <div className="text-center">
+                <Image size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
+                <p className="text-[12px] text-[var(--muted-foreground)]">No profile photo uploaded</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Selfie session photo */}
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+          <h3 className="text-[13px] text-[var(--muted-foreground)] mb-3 flex items-center gap-1.5" style={{ fontWeight: 600 }}>
+            <ScanFace size={13} /> LIVENESS SESSION PHOTO
+          </h3>
+          {selfie.photoUrl ? (
+            <button onClick={() => setPhotoExpanded('selfie')}
+              className="group w-full rounded-lg border border-[var(--border)] overflow-hidden hover:border-[var(--primary)] transition-colors">
+              <div className="aspect-square bg-[var(--accent)] flex items-center justify-center overflow-hidden relative">
+                <img src={selfie.photoUrl} alt="Selfie" className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                  <Eye size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+              </div>
+            </button>
+          ) : (
+            <div className="aspect-square rounded-lg border border-dashed border-[var(--border)] flex items-center justify-center">
+              <div className="text-center">
+                <ScanFace size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
+                <p className="text-[12px] text-[var(--muted-foreground)]">No session photo</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Session details */}
+      <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+        <h3 className="text-[13px] text-[var(--muted-foreground)] mb-3" style={{ fontWeight: 600 }}>SESSION DETAILS</h3>
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <p className="text-[11px] text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>Status</p>
+            <StatusBadge status={selfieStatusVariant(selfie.status)} label={selfie.status} size="sm" />
+          </div>
+          <InfoRow label="Method" value={selfie.method} />
+          <InfoRow label="Challenge Type" value={selfie.challengeType} />
+          <InfoRow label="Attempts" value={selfie.attemptCount} />
+          <InfoRow label="Created" value={selfie.createdAt ? formatDateTime(selfie.createdAt) : '—'} />
+          <InfoRow label="Consumed" value={selfie.consumedAt ? formatDateTime(selfie.consumedAt) : '—'} />
+          {selfie.reviewReason && (
+            <div className="col-span-3">
+              <p className="text-[11px] text-[var(--muted-foreground)]" style={{ fontWeight: 500 }}>Review Reason</p>
+              <p className="text-[13px] text-amber-600 dark:text-amber-400">{selfie.reviewReason}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Metrics */}
+        {Object.keys(metrics).length > 0 && (
+          <div className="mt-4 pt-4 border-t border-[var(--border)]">
+            <p className="text-[11px] text-[var(--muted-foreground)] mb-2" style={{ fontWeight: 600 }}>METRICS</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {Object.entries(metrics).map(([k, v]) => (
+                <div key={k} className="p-2 bg-[var(--accent)]/50 rounded-lg">
+                  <p className="text-[10px] text-[var(--muted-foreground)] uppercase">{k.replace(/([A-Z])/g, ' $1').trim()}</p>
+                  <p className="text-[12px] text-[var(--foreground)]" style={{ fontWeight: 500 }}>
+                    {typeof v === 'number' ? (v < 1 && v > 0 ? `${(v * 100).toFixed(0)}%` : v) : String(v)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Liveness review actions (only for MANUAL_REVIEW) */}
+      {needsReview && (
+        <div className="bg-[var(--card)] border-2 border-amber-300 dark:border-amber-700 rounded-xl p-5">
+          <h3 className="text-[13px] text-amber-700 dark:text-amber-400 mb-4 flex items-center gap-1.5" style={{ fontWeight: 600 }}>
+            <AlertTriangle size={13} /> Review Selfie Verification
+          </h3>
+          <p className="text-[12px] text-[var(--muted-foreground)] mb-4">
+            Compare the profile photo and liveness session photo. Verify they are the same person, no face obstructions, and the photo meets quality standards.
+          </p>
+
+          {showRejectInput && (
+            <div className="mb-4">
+              <label className="text-[12px] text-[var(--muted-foreground)] mb-1 block" style={{ fontWeight: 500 }}>
+                Rejection reason
+              </label>
+              <textarea value={rejectNotes} onChange={(e) => setRejectNotes(e.target.value)} rows={2}
+                className="w-full px-3 py-2 text-[13px] border border-[var(--border)] rounded-lg bg-[var(--background)] text-[var(--foreground)] resize-none focus:outline-none focus:ring-2 focus:ring-red-500/30"
+                placeholder="Why is this selfie being rejected?" />
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              disabled={reviewLoading}
+              onClick={() => handleLivenessReview('VERIFIED')}
+              className="flex-1 py-2.5 text-[13px] bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+              style={{ fontWeight: 500 }}>
+              {reviewLoading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+              Approve Selfie
+            </button>
+            {!showRejectInput ? (
+              <button
+                disabled={reviewLoading}
+                onClick={() => setShowRejectInput(true)}
+                className="flex-1 py-2.5 text-[13px] bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+                style={{ fontWeight: 500 }}>
+                <XCircle size={14} /> Reject Selfie
+              </button>
+            ) : (
+              <button
+                disabled={reviewLoading || !rejectNotes.trim()}
+                onClick={() => handleLivenessReview('FAILED', rejectNotes)}
+                className="flex-1 py-2.5 text-[13px] bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+                style={{ fontWeight: 500 }}>
+                {reviewLoading ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+                Confirm Reject
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Full-screen photo overlay */}
+      {photoExpanded && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8 cursor-pointer"
+          onClick={() => setPhotoExpanded(null)}>
+          <img
+            src={photoExpanded === 'profile' ? (userPhotoUrl ?? '') : (selfie.photoUrl ?? '')}
+            alt={photoExpanded === 'profile' ? 'Profile photo' : 'Selfie photo'}
+            className="max-w-full max-h-full object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
    TABS
    ═══════════════════════════════════════════════════════════════ */
 
 const TABS = [
   { id: 'application', label: 'Application',     icon: FileText },
+  { id: 'selfie',      label: 'Selfie',          icon: ScanFace },
   { id: 'documents',   label: 'Documents',       icon: Image },
   { id: 'vehicle',     label: 'Vehicle',         icon: Car },
   { id: 'ownership',   label: 'Ownership Docs',  icon: Key },
@@ -477,6 +754,12 @@ export function DriverReviewPage() {
               style={{ fontWeight: activeTab === tab.id ? 600 : 400 }}>
               <tab.icon size={14} className={activeTab === tab.id ? 'text-[var(--primary)]' : ''} />
               {tab.label}
+              {tab.id === 'selfie' && (driver as any).selfieVerification?.status === 'MANUAL_REVIEW' && (
+                <span className="ml-auto w-2 h-2 rounded-full bg-amber-500" />
+              )}
+              {tab.id === 'selfie' && !(driver as any).selfieVerification && (
+                <span className="ml-auto w-2 h-2 rounded-full bg-red-500" />
+              )}
               {tab.id === 'change' && pendingVehicle && (
                 <span className="ml-auto w-2 h-2 rounded-full bg-violet-500" />
               )}
@@ -598,6 +881,11 @@ export function DriverReviewPage() {
               </div>
             )}
           </div>
+        )}
+
+        {/* ── SELFIE VERIFICATION TAB ─────────────────────── */}
+        {activeTab === 'selfie' && (
+          <SelfieTab driver={d} onReviewed={loadData} />
         )}
 
         {/* ── DOCUMENTS TAB ────────────────────────────────── */}
