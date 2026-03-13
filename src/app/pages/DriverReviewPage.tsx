@@ -14,7 +14,7 @@ import {
 import { StatusBadge } from '../components/shared/StatusBadge';
 import {
   fetchDriverById, fetchDriverVehicles, reviewDriver, reviewVehicleChange,
-  reviewLivenessSession,
+  reviewLivenessSession, reopenDriverApplication,
   type ApiDriver, type ApiDriverVehicle,
 } from '../lib/drivers-api';
 
@@ -774,6 +774,23 @@ export function DriverReviewPage() {
               className="w-full py-2 text-[12px] bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1.5"
               style={{ fontWeight: 500 }}>
               <CheckCircle size={13} /> Review Application
+            </button>
+          )}
+          {d.applicationStatus === 'REJECTED' && (
+            <button onClick={async () => {
+              const reason = prompt('Reason for reopening this application:');
+              if (!reason) return;
+              try {
+                await reopenDriverApplication(d.id, reason);
+                toast.success('Application reopened — moved back to pending queue');
+                loadData();
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : 'Failed to reopen');
+              }
+            }}
+              className="w-full py-2 text-[12px] bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors flex items-center justify-center gap-1.5"
+              style={{ fontWeight: 500 }}>
+              <RefreshCw size={13} /> Reopen Application
             </button>
           )}
           {hasPendingChange && (
