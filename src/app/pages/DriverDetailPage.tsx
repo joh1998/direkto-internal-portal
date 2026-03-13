@@ -10,7 +10,7 @@ import {
   LayoutDashboard, FileText, Car, MapPin, DollarSign,
   ShieldCheck, ShieldAlert, CheckCircle, XCircle, Ban,
   Play, Clock, Eye, ExternalLink, RefreshCw, Image,
-  ChevronLeft, ChevronRight, Bike, AlertTriangle,
+  ChevronLeft, ChevronRight, Bike, AlertTriangle, ScanFace,
 } from 'lucide-react';
 import { StatusBadge } from '../components/shared/StatusBadge';
 import { ConfirmDialog } from '../components/shared/ConfirmDialog';
@@ -21,9 +21,11 @@ import { useApiQuery } from '../hooks/useApiQuery';
 import {
   fetchDriverById, fetchDriverVehicles, fetchDriverDocuments,
   fetchDriverStats, fetchDriverTrips, fetchDriverEarnings,
+  fetchDriverLivenessSessions,
   reviewDriver, suspendDriver, reactivateDriver,
   revokeDriverApproval, reopenDriverApplication,
   type ApiDriver, type ApiDriverVehicle, type DriverTrip, type DriverEarnings, type DriverTripsPaginated,
+  type LivenessSession,
 } from '../lib/drivers-api';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -50,6 +52,7 @@ const TABS = [
   { id: 'overview',   label: 'Overview',   icon: LayoutDashboard },
   { id: 'documents',  label: 'Documents',  icon: FileText },
   { id: 'vehicle',    label: 'Vehicle',    icon: Car },
+  { id: 'liveness',   label: 'Selfie',     icon: ScanFace },
   { id: 'trips',      label: 'Trips',      icon: MapPin },
   { id: 'earnings',   label: 'Earnings',   icon: DollarSign },
 ] as const;
@@ -193,6 +196,42 @@ function OverviewTab({ driver }: { driver: ApiDriver }) {
         </div>
       )}
 
+      {/* Selfie Verification */}
+      {(driver as any).selfieVerification && (
+        <div>
+          <h3 className="text-[13px] text-[var(--foreground)] mb-3 flex items-center gap-1.5" style={{ fontWeight: 600 }}>
+            <ScanFace size={14} /> Selfie Verification
+          </h3>
+          <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+            {(() => {
+              const sv = (driver as any).selfieVerification;
+              const isOk = sv.status === 'VERIFIED' || sv.status === 'CONSUMED';
+              const needsReview = sv.status === 'MANUAL_REVIEW';
+              return (
+                <div className="flex items-center gap-4">
+                  {sv.photoUrl && (
+                    <img src={sv.photoUrl} alt="Selfie" className="w-14 h-14 rounded-lg object-cover border border-[var(--border)]" />
+                  )}
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center gap-2">
+                      {isOk && <CheckCircle size={14} className="text-emerald-500" />}
+                      {needsReview && <AlertTriangle size={14} className="text-amber-500" />}
+                      {sv.status === 'FAILED' && <XCircle size={14} className="text-red-500" />}
+                      <span className="text-[13px] text-[var(--foreground)]" style={{ fontWeight: 600 }}>
+                        {sv.status === 'CONSUMED' ? 'VERIFIED' : sv.status}
+                      </span>
+                    </div>
+                    {sv.method && <p className="text-[11px] text-[var(--muted-foreground)]">Method: {sv.method}</p>}
+                    {sv.reviewReason && <p className="text-[11px] text-amber-600 dark:text-amber-400">{sv.reviewReason}</p>}
+                    {sv.verifiedAt && <p className="text-[11px] text-[var(--muted-foreground)]">Verified: {formatDateTime(sv.verifiedAt)}</p>}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* Admin notes */}
       {driver.adminNotes && (
         <div>
@@ -202,6 +241,122 @@ function OverviewTab({ driver }: { driver: ApiDriver }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LIVENESS TAB
+   ═══════════════════════════════════════════════════════════════ */
+function LivenessTab({ driverId }: { driverId: number }) {
+  const { data: sessions, isLoading, error, refetch } = useApiQuery<LivenessSession[]>(
+    () => fetchDriverLivenessSessions(driverId), [driverId],
+  );
+
+  const list = sessions ?? [];
+
+  function statusColor(s: string) {
+    switch (s) {
+      case 'VERIFIED':      return 'text-emerald-600 dark:text-emerald-400';
+      case 'CONSUMED':      return 'text-emerald-600 dark:text-emerald-400';
+      case 'MANUAL_REVIEW': return 'text-amber-600 dark:text-amber-400';
+      case 'FAILED':        return 'text-red-600 dark:text-red-400';
+      case 'EXPIRED':       return 'text-[var(--muted-foreground)]';
+      default:              return 'text-[var(--foreground)]';
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-[13px] text-[var(--foreground)]" style={{ fontWeight: 600 }}>Liveness Session History</h3>
+        <button onClick={() => refetch()} className="flex items-center gap-1.5 text-[12px] text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
+          <RefreshCw size={12} /> Refresh
+        </button>
+      </div>
+
+      {isLoading && !sessions && (
+        <div className="flex items-center gap-2 text-[var(--muted-foreground)] py-8 justify-center">
+          <Loader2 size={16} className="animate-spin" />
+          <span className="text-[13px]">Loading sessions…</span>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-400 rounded-lg border border-red-200 dark:border-red-800">
+          <AlertCircle size={14} />
+          <span className="text-[12px]">{error}</span>
+        </div>
+      )}
+
+      {!isLoading && list.length === 0 && (
+        <div className="text-center py-12">
+          <ScanFace size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
+          <p className="text-[13px] text-[var(--muted-foreground)]">No liveness sessions found</p>
+        </div>
+      )}
+
+      {list.map((s) => {
+        const metrics = s.metrics ?? {};
+        const effectiveStatus = s.status === 'CONSUMED' && typeof (metrics as any).result === 'string'
+          ? (metrics as any).result : s.status;
+        const adminReview = (metrics as any).adminReview;
+
+        return (
+          <div key={s.id} className="bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden">
+            <div className="flex items-center gap-4 px-4 py-3">
+              {/* Photo */}
+              <div className="w-12 h-12 rounded-lg bg-[var(--accent)] border border-[var(--border)] overflow-hidden shrink-0 flex items-center justify-center">
+                {s.photoUrl ? (
+                  <img src={s.photoUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <ScanFace size={20} className="text-[var(--muted-foreground)]" />
+                )}
+              </div>
+
+              {/* Info */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[13px] ${statusColor(effectiveStatus)}`} style={{ fontWeight: 600 }}>
+                    {effectiveStatus === 'CONSUMED' ? 'VERIFIED' : effectiveStatus}
+                  </span>
+                  <span className="text-[11px] text-[var(--muted-foreground)]">
+                    {s.method} · {s.challengeType}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[var(--muted-foreground)] mt-0.5">
+                  {s.createdAt ? formatDateTime(s.createdAt) : '—'}
+                  {' · '}{s.attemptCount} attempt{s.attemptCount !== 1 ? 's' : ''}
+                </p>
+                {s.reviewReason && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+                    Review: {s.reviewReason}
+                  </p>
+                )}
+                {s.failureReason && (
+                  <p className="text-[11px] text-red-600 dark:text-red-400 mt-0.5">
+                    Failed: {s.failureReason}
+                  </p>
+                )}
+                {adminReview && (
+                  <p className="text-[11px] text-blue-600 dark:text-blue-400 mt-0.5">
+                    Admin {adminReview.decision} by {adminReview.reviewedByName}
+                    {adminReview.notes ? ` — ${adminReview.notes}` : ''}
+                  </p>
+                )}
+              </div>
+
+              {/* Photo link */}
+              {s.photoUrl && (
+                <a href={s.photoUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 shrink-0">
+                  <ExternalLink size={10} /> View
+                </a>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -730,6 +885,7 @@ export function DriverDetailPage() {
         {activeTab === 'overview' && <OverviewTab driver={d} />}
         {activeTab === 'documents' && <DocumentsTab driver={d} />}
         {activeTab === 'vehicle' && <VehicleTab driver={d} />}
+        {activeTab === 'liveness' && <LivenessTab driverId={d.id} />}
         {activeTab === 'trips' && <TripsTab driver={d} />}
         {activeTab === 'earnings' && <EarningsTab driver={d} />}
       </div>

@@ -217,3 +217,46 @@ export async function reopenDriverApplication(driverId: number, reason: string) 
 export async function updateFixRequirements(driverId: number, fixRequirements: Array<{ field: string; reason: string; required: boolean }>, adminNotes?: string) {
   return api.patch(`/admin/drivers/${driverId}/fix-requirements`, { fixRequirements, adminNotes });
 }
+
+// ── Liveness Session Review ───────────────────────────────────
+
+export interface LivenessSession {
+  id: number;
+  publicId: string;
+  userId: number;
+  status: string;
+  method: string;
+  challengeType: string;
+  attemptCount: number;
+  reviewReason: string | null;
+  failureReason: string | null;
+  photoUrl: string | null;
+  metrics: Record<string, any> | null;
+  createdAt: string;
+  verifiedAt: string | null;
+  consumedAt: string | null;
+  expiresAt?: string;
+  user?: {
+    id: number;
+    name: string;
+    phone: string;
+    email: string | null;
+    photoUrl: string | null;
+  };
+}
+
+export async function fetchPendingLivenessSessions(): Promise<LivenessSession[]> {
+  return api.get('/admin/drivers/liveness/pending');
+}
+
+export async function fetchDriverLivenessSessions(driverId: number): Promise<LivenessSession[]> {
+  return api.get(`/admin/drivers/${driverId}/liveness`);
+}
+
+export async function reviewLivenessSession(
+  sessionId: string,
+  decision: 'VERIFIED' | 'FAILED',
+  notes?: string,
+) {
+  return api.post(`/admin/drivers/liveness/${sessionId}/review`, { decision, notes });
+}

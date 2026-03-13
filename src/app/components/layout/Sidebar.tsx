@@ -17,6 +17,7 @@ import {
   PanelLeft,
   List,
   Globe,
+  ScanFace,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { canView, ROLE_LABELS, type Role, type Module } from '../../lib/permissions';
@@ -59,6 +60,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Merchants', path: '/merchants', icon: <Store size={18} />, module: 'merchants', badge: 2 },
       { label: 'Drivers', path: '/drivers', icon: <Car size={18} />, module: 'drivers', badge: 2 },
       { label: 'Pending Drivers', path: '/drivers/pending', icon: <ClipboardCheck size={18} />, module: 'drivers' },
+      { label: 'Selfie Review', path: '/drivers/liveness', icon: <ScanFace size={18} />, module: 'drivers' },
       { label: 'Users', path: '/users', icon: <Users size={18} />, module: 'users' },
     ],
   },

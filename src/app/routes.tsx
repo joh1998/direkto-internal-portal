@@ -10,6 +10,7 @@ import { DriversPage } from './pages/DriversPage';
 import { DriverDetailPage } from './pages/DriverDetailPage';
 import { PendingDriversPage } from './pages/PendingDriversPage';
 import { DriverReviewPage } from './pages/DriverReviewPage';
+import { LivenessReviewPage } from './pages/LivenessReviewPage';
 import { UsersPage } from './pages/UsersPage';
 import { TripsPage } from './pages/TripsPage';
 import { BookingsPage } from './pages/BookingsPage';
@@ -43,6 +44,7 @@ export const router = createBrowserRouter([
       { path: 'drivers/:id', Component: DriverDetailPage },
       { path: 'drivers/pending', Component: PendingDriversPage },
       { path: 'drivers/pending/:id', Component: DriverReviewPage },
+      { path: 'drivers/liveness', Component: LivenessReviewPage },
       { path: 'users', Component: UsersPage },
       { path: 'trips', Component: TripsPage },
       { path: 'bookings', Component: BookingsPage },
